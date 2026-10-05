@@ -1,0 +1,19 @@
+{
+  "name": "mangahub-paperback-extension",
+  "version": "1.0.0",
+  "repositoryName": "MangaHub Extension",
+  "repositoryBaseURL": "https://jboncler.github.io/mangahub-extension",
+  "description": "Paperback 0.8 extension for MangaHub (mangahub.io).",
+  "main": "index.js",
+  "author": "jakub",
+  "scripts": {
+    "bundle": "npx paperback bundle",
+    "serve": "npx paperback serve",
+    "test": "npx paperback test"
+  },
+  "devDependencies": {
+    "@paperback/toolchain": "^0.8.7",
+    "@paperback/types": "^0.8.7",
+    "typescript": "^4.9.5"
+  }
+}
