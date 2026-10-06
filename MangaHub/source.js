@@ -735,22 +735,12 @@ var _Sources = (() => {
   var CDN_URL = "https://imgx.mghcdn.com";
   var API_PATH = "m01";
   var SOURCE_NAME = "MangaHub";
-  var SOURCE_VERSION = "1.0.4";
+  var SOURCE_VERSION = "1.0.5";
   var DEFAULT_HEADERS = {
     "x-origin": SITE_URL,
     "x-referer": `${SITE_URL}/`,
     "Accept-Language": "en-US,en;q=0.9"
   };
-  var ROTATING_USER_AGENTS = [
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15",
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-  ];
-  function getRandomUserAgent() {
-    return ROTATING_USER_AGENTS[Math.floor(Math.random() * ROTATING_USER_AGENTS.length)];
-  }
   function randomInt(min, max) {
     return Math.floor(Math.random() * (max - min + 1)) + min;
   }
@@ -825,14 +815,14 @@ var _Sources = (() => {
     icon: "icon.png",
     author: "jakub",
     authorWebsite: "https://jboncler.github.io/mangahub-extension/",
-    description: "MangaHub (mangahub.io) source for Paperback 0.8. v1.0.4: removed Cloudflare bypass intent (webview cannot pass MangaHub's bot challenge); use the in-app Safari link under Settings to obtain cookies, then Refresh.",
+    description: "MangaHub (mangahub.io) source for Paperback 0.8. v1.0.5: CF bypass restored, now targets a manga page (less CF-aggressive than the homepage) like netsky's extension.",
     contentRating: import_types.ContentRating.EVERYONE,
     websiteBaseURL: SITE_URL,
     sourceTags: [
       { text: "English", type: "info" },
       { text: "GraphQL", type: "default" }
     ],
-    intents: import_types.SourceIntents.MANGA_CHAPTERS | import_types.SourceIntents.HOMEPAGE_SECTIONS | import_types.SourceIntents.SETTINGS_UI
+    intents: import_types.SourceIntents.MANGA_CHAPTERS | import_types.SourceIntents.HOMEPAGE_SECTIONS | import_types.SourceIntents.CLOUDFLARE_BYPASS_REQUIRED | import_types.SourceIntents.SETTINGS_UI
   };
   var MangaHubInterceptor = class {
     constructor(parent, stateManager) {
@@ -877,14 +867,23 @@ var _Sources = (() => {
     }
     // -----------------------------
     // Cloudflare bypass marker
+    //
+    // Paperback will load this URL in an in-app webview until the page is
+    // "fully loaded" (real content, not a CF interstitial). On success it
+    // copies the cookies set during that load (notably `mhub_access`) into
+    // this source's requestManager cookie store, which is what API calls then
+    // pick up. We point at a real manga page rather than the bare homepage
+    // because MangaHub's Cloudflare config challenges `/` harder than an
+    // established content URL.
     // -----------------------------
     getCloudflareBypassRequest() {
       return App.createRequest({
-        url: SITE_URL,
+        url: `${SITE_URL}/manga/one-piece_142`,
         method: "GET",
         headers: {
           ...DEFAULT_HEADERS,
-          "User-Agent": getRandomUserAgent(),
+          "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15",
+          "x-user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15",
           "x-sec-fetch-dest": "document",
           "x-sec-fetch-mode": "navigate",
           "Upgrade-Insecure-Requests": "1"
@@ -1180,12 +1179,12 @@ var _Sources = (() => {
     async getSourceMenu() {
       const helpLabel = App.createLabel({
         id: "help_label",
-        label: "If nothing loads, open mangahub.io in Safari once to satisfy the Cloudflare check, then come back here and tap Refresh.",
+        label: "First open: Paperback will run a Cloudflare bypass on a manga page \u2014 wait for it to finish. If sections still don't load, the CF check is unusually strict; open mangahub.io in Safari once, then tap Refresh.",
         value: void 0
       });
       const helpLink = App.createLink({
         id: "help_link",
-        label: "Open mangahub.io in Safari",
+        label: "Open mangahub.io in Safari (fallback)",
         value: SITE_URL
       });
       const refreshButton = App.createButton({
