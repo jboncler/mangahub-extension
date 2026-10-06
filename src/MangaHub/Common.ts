@@ -1,11 +1,11 @@
 // Constants and enums for MangaHub
 export const SITE_URL = "https://mangahub.io";
-export const API_URL = "https://api2.mangahub.io/graphql";
+export const API_URL = "https://api.mghcdn.com/graphql";
 export const CDN_URL = "https://imgx.mghcdn.com";
 export const API_PATH = "m01";
 export const SOURCE_NAME = "MangaHub";
 export const SOURCE_ID = "MangaHub";
-export const SOURCE_VERSION = "1.0.0";
+export const SOURCE_VERSION = "1.0.1";
 
 export const DEFAULT_HEADERS = {
     "x-origin": SITE_URL,

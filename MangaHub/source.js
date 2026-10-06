@@ -731,11 +731,11 @@ var _Sources = (() => {
 
   // src/MangaHub/Common.ts
   var SITE_URL = "https://mangahub.io";
-  var API_URL = "https://api2.mangahub.io/graphql";
+  var API_URL = "https://api.mghcdn.com/graphql";
   var CDN_URL = "https://imgx.mghcdn.com";
   var API_PATH = "m01";
   var SOURCE_NAME = "MangaHub";
-  var SOURCE_VERSION = "1.0.0";
+  var SOURCE_VERSION = "1.0.1";
   var DEFAULT_HEADERS = {
     "x-origin": SITE_URL,
     "x-referer": `${SITE_URL}/`,
@@ -825,7 +825,7 @@ var _Sources = (() => {
     icon: "icon.png",
     author: "jakub",
     authorWebsite: "https://jboncler.github.io/mangahub-extension/",
-    description: "MangaHub (mangahub.io) source for Paperback 0.8. Uses the official GraphQL API. Auto-refreshes the mhub_access API key on rate-limit or invalid-key errors.",
+    description: "MangaHub (mangahub.io) source for Paperback 0.8. Uses the official GraphQL API at api.mghcdn.com. v1.0.1: API endpoint migrated from api2.mangahub.io.",
     contentRating: import_types.ContentRating.EVERYONE,
     websiteBaseURL: SITE_URL,
     sourceTags: [
