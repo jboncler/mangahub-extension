@@ -15,5 +15,8 @@
     "@paperback/toolchain": "^0.8.7",
     "@paperback/types": "^0.8.7",
     "typescript": "^4.9.5"
+  },
+  "dependencies": {
+    "@noble/ciphers": "^1.3.0"
   }
 }
