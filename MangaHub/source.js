@@ -735,7 +735,7 @@ var _Sources = (() => {
   var CDN_URL = "https://imgx.mghcdn.com";
   var API_PATH = "m01";
   var SOURCE_NAME = "MangaHub";
-  var SOURCE_VERSION = "1.0.6";
+  var SOURCE_VERSION = "1.0.7";
   var DEFAULT_HEADERS = {
     "x-origin": SITE_URL,
     "x-referer": `${SITE_URL}/`,
@@ -815,14 +815,14 @@ var _Sources = (() => {
     icon: "icon.png",
     author: "jakub",
     authorWebsite: "https://jboncler.github.io/mangahub-extension/",
-    description: "MangaHub (mangahub.io) source for Paperback 0.8. v1.0.6: switched all UAs to desktop Chrome to avoid CF reCAPTCHA challenges that appear in mobile/Safari webviews.",
+    description: "MangaHub (mangahub.io) source for Paperback 0.8. v1.0.7: removed the in-app Cloudflare bypass (was looping on 'checking if human'); the extension now fetches mhub_access silently via requestManager, with a Safari link as a manual fallback.",
     contentRating: import_types.ContentRating.EVERYONE,
     websiteBaseURL: SITE_URL,
     sourceTags: [
       { text: "English", type: "info" },
       { text: "GraphQL", type: "default" }
     ],
-    intents: import_types.SourceIntents.MANGA_CHAPTERS | import_types.SourceIntents.HOMEPAGE_SECTIONS | import_types.SourceIntents.CLOUDFLARE_BYPASS_REQUIRED | import_types.SourceIntents.SETTINGS_UI
+    intents: import_types.SourceIntents.MANGA_CHAPTERS | import_types.SourceIntents.HOMEPAGE_SECTIONS | import_types.SourceIntents.SETTINGS_UI
   };
   var MangaHubInterceptor = class {
     constructor(parent, stateManager) {
@@ -866,33 +866,22 @@ var _Sources = (() => {
       this.keyFetchInFlight = null;
     }
     // -----------------------------
-    // Cloudflare bypass marker
+    // Cloudflare bypass: intentionally omitted.
     //
-    // Paperback will load this URL in an in-app webview until the page is
-    // "fully loaded" (real content, not a CF interstitial). On success it
-    // copies the cookies set during that load (notably `mhub_access`) into
-    // this source's requestManager cookie store, which is what API calls then
-    // pick up. We point at a real manga page rather than the bare homepage
-    // because MangaHub's Cloudflare config challenges `/` harder than an
-    // established content URL.
+    // MangaHub's Cloudflare policy challenges the iOS in-app WKWebView with
+    // a "checking if human" / Google reCAPTCHA loop that Paperback cannot
+    // satisfy automatically, regardless of UA. Instead we:
+    //
+    //   1. Hit the GraphQL API (`api.mghcdn.com`) directly — search and
+    //      manga-info endpoints do NOT require `mhub_access`.
+    //   2. Fetch `mhub_access` lazily via requestManager.schedule from a
+    //      manga page (which sets it as a cookie in the response). The
+    //      request uses a desktop Chrome UA so CF lets it through.
+    //   3. If step 2 ever fails on a particular network, the Settings
+    //      screen exposes a "Open mangahub.io in Safari" link so the user
+    //      can prime `cf_clearance` for their IP in real Safari, and a
+    //      "Refresh API key" button to retry step 2.
     // -----------------------------
-    getCloudflareBypassRequest() {
-      return App.createRequest({
-        url: `${SITE_URL}/manga/one-piece_142`,
-        method: "GET",
-        headers: {
-          ...DEFAULT_HEADERS,
-          // Desktop Chrome UA — CF has historically trusted it more than
-          // Safari or mobile webviews, which often get unsolvable
-          // reCAPTCHA challenges that look like "opened google.com".
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-          "x-user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-          "x-sec-fetch-dest": "document",
-          "x-sec-fetch-mode": "navigate",
-          "Upgrade-Insecure-Requests": "1"
-        }
-      });
-    }
     // -----------------------------
     // Key management (mhub_access cookie)
     // -----------------------------
@@ -1183,12 +1172,12 @@ var _Sources = (() => {
     async getSourceMenu() {
       const helpLabel = App.createLabel({
         id: "help_label",
-        label: "First open: Paperback will run a Cloudflare bypass on a manga page \u2014 wait for it to finish. If sections still don't load, the CF check is unusually strict; open mangahub.io in Safari once, then tap Refresh.",
+        label: "Popular/Latest and search load directly from the API. If chapters fail with 'API rate limit exceeded', the source needs an mhub_access session cookie \u2014 tap the Safari link below to load mangahub.io, then tap Refresh.",
         value: void 0
       });
       const helpLink = App.createLink({
         id: "help_link",
-        label: "Open mangahub.io in Safari (fallback)",
+        label: "Open mangahub.io in Safari",
         value: SITE_URL
       });
       const refreshButton = App.createButton({
