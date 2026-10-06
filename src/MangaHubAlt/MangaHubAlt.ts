@@ -39,19 +39,20 @@ const MH_DOMAIN = 'https://mangahub.io'
 const MH_API_DOMAIN = 'https://api.mghcdn.com/graphql'
 const MH_CDN_DOMAIN = 'https://imgx.mghcdn.com'
 
-export const MangaHubInfo: SourceInfo = {
-    version: '3.2.1',
-    name: 'MangaHub',
+export const MangaHubAltInfo: SourceInfo = {
+    version: '3.2.2',
+    name: 'MangaHub (Alt)',
     icon: 'icon.png',
-    author: 'Netsky',
-    authorWebsite: 'https://github.com/TheNetsky',
-    description: 'Extension that pulls manga from mangahub.io',
+    author: 'jakub',
+    authorWebsite: 'https://jboncler.github.io/mangahub-extension/',
+    description:
+        'MangaHub (mangahub.io) for Paperback 0.8. Same as netsky/Mangahub but bundled with optional AES-GCM decrypt (PR #123); falls back to plaintext pages when encryption is unavailable.',
     contentRating: ContentRating.MATURE,
     websiteBaseURL: MH_DOMAIN,
     sourceTags: [
         {
-            text: 'Buggy',
-            type: BadgeColor.RED
+            text: "Alt",
+            type: BadgeColor.YELLOW
         }
     ],
     intents: SourceIntents.MANGA_CHAPTERS | SourceIntents.HOMEPAGE_SECTIONS | SourceIntents.CLOUDFLARE_BYPASS_REQUIRED

@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "repositoryName": "MangaHub Extension",
   "baseURL": "https://jboncler.github.io/mangahub-extension/",
-  "description": "Paperback 0.8 extension for MangaHub (mangahub.io).",
+  "description": "Paperback 0.8 extension for MangaHub (mangahub.io). Includes AES-GCM chapter decryption (netsky PR #123) with auto-fallback to plaintext pages.",
   "main": "index.js",
   "author": "jakub",
   "scripts": {

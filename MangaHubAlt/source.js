@@ -721,15 +721,15 @@ var _Sources = (() => {
     }
   });
 
-  // src/MangaHub/MangaHub.ts
-  var MangaHub_exports = {};
-  __export(MangaHub_exports, {
-    MangaHubInfo: () => MangaHubInfo,
+  // src/MangaHubAlt/MangaHubAlt.ts
+  var MangaHubAlt_exports = {};
+  __export(MangaHubAlt_exports, {
+    MangaHubAltInfo: () => MangaHubAltInfo,
     Mangahub: () => Mangahub
   });
   var import_types = __toESM(require_lib());
 
-  // src/MangaHub/MangahubParser.ts
+  // src/MangaHubAlt/MangahubParser.ts
   var MH_CDN_THUMBS_DOMAIN = "https://thumb.mghcdn.com";
   var HTML_ENTITIES = {
     amp: "&",
@@ -1489,7 +1489,7 @@ var _Sources = (() => {
     };
   });
 
-  // src/MangaHub/MangahubCrypto.ts
+  // src/MangaHubAlt/MangahubCrypto.ts
   var isEncryptedPages = (pages) => pages.startsWith("enc:v1");
   var getEncryptedKeyId = (pages) => pages.split(":")[2] ?? "";
   var decryptPages = (pages, params) => {
@@ -1554,23 +1554,23 @@ var _Sources = (() => {
     return out;
   };
 
-  // src/MangaHub/MangaHub.ts
+  // src/MangaHubAlt/MangaHubAlt.ts
   var MH_DOMAIN = "https://mangahub.io";
   var MH_API_DOMAIN = "https://api.mghcdn.com/graphql";
   var MH_CDN_DOMAIN = "https://imgx.mghcdn.com";
-  var MangaHubInfo = {
-    version: "3.2.1",
-    name: "MangaHub",
+  var MangaHubAltInfo = {
+    version: "3.2.2",
+    name: "MangaHub (Alt)",
     icon: "icon.png",
-    author: "Netsky",
-    authorWebsite: "https://github.com/TheNetsky",
-    description: "Extension that pulls manga from mangahub.io",
+    author: "jakub",
+    authorWebsite: "https://jboncler.github.io/mangahub-extension/",
+    description: "MangaHub (mangahub.io) for Paperback 0.8. Same as netsky/Mangahub but bundled with optional AES-GCM decrypt (PR #123); falls back to plaintext pages when encryption is unavailable.",
     contentRating: import_types.ContentRating.MATURE,
     websiteBaseURL: MH_DOMAIN,
     sourceTags: [
       {
-        text: "Buggy",
-        type: import_types.BadgeColor.RED
+        text: "Alt",
+        type: import_types.BadgeColor.YELLOW
       }
     ],
     intents: import_types.SourceIntents.MANGA_CHAPTERS | import_types.SourceIntents.HOMEPAGE_SECTIONS | import_types.SourceIntents.CLOUDFLARE_BYPASS_REQUIRED
@@ -2060,7 +2060,7 @@ Try the CloudFlare bypass again or come back later.`);
       }
     }
   };
-  return __toCommonJS(MangaHub_exports);
+  return __toCommonJS(MangaHubAlt_exports);
 })();
 /*! Bundled license information:
 
