@@ -42,7 +42,7 @@ export const MangaHubInfo: SourceInfo = {
     author: "jakub",
     authorWebsite: "https://jboncler.github.io/mangahub-extension/",
     description:
-        "MangaHub (mangahub.io) source for Paperback 0.8. Uses the official GraphQL API at api.mghcdn.com. v1.0.3: fixed User-Agent rotation triggering Cloudflare blocks; search no longer fails closed.",
+        "MangaHub (mangahub.io) source for Paperback 0.8. v1.0.4: removed Cloudflare bypass intent (webview cannot pass MangaHub's bot challenge); use the in-app Safari link under Settings to obtain cookies, then Refresh.",
     contentRating: ContentRating.EVERYONE,
     websiteBaseURL: SITE_URL,
     sourceTags: [
@@ -52,7 +52,7 @@ export const MangaHubInfo: SourceInfo = {
     intents:
         SourceIntents.MANGA_CHAPTERS |
         SourceIntents.HOMEPAGE_SECTIONS |
-        SourceIntents.CLOUDFLARE_BYPASS_REQUIRED,
+        SourceIntents.SETTINGS_UI,
 };
 
 interface KeyCache {
@@ -163,8 +163,12 @@ export class MangaHub extends Source
             method: "GET",
             headers: {
                 ...DEFAULT_HEADERS,
-                "User-Agent": getRandomUserAgent(),
-                "x-user-agent": getRandomUserAgent(),
+                // Desktop UA is more trusted by Cloudflare than mobile; mobile
+                // webviews often get an unsolvable "verify if human" page.
+                "User-Agent":
+                    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15",
+                "x-user-agent":
+                    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15",
                 "x-sec-fetch-dest": "document",
                 "x-sec-fetch-mode": "navigate",
                 "Upgrade-Insecure-Requests": "1",
@@ -173,6 +177,15 @@ export class MangaHub extends Source
 
         try {
             const response = await this.requestManager.schedule(request, 5);
+            const body = response.data ?? "";
+            // Detect Cloudflare challenge HTML. The body starts with `<!DOCTYPE`
+            // and contains "Just a moment..." — if so, treat as no key.
+            if (/<!DOCTYPE/i.test(body) || /Just a moment/i.test(body)) {
+                console.log(
+                    "[MangaHub] homepage returned Cloudflare challenge; no key obtained"
+                );
+                return this.keyCache.mhubAccess;
+            }
             const setCookies: string[] = [];
             const headers = response.headers ?? {};
             for (const k of Object.keys(headers)) {
@@ -196,8 +209,10 @@ export class MangaHub extends Source
                     }
                 }
             }
-        } catch {
-            // fall through
+        } catch (e) {
+            console.log(
+                `[MangaHub] key fetch failed: ${e instanceof Error ? e.message : e}`
+            );
         }
 
         if (!force) {
@@ -454,9 +469,20 @@ export class MangaHub extends Source
     }
 
     // -----------------------------
-    // Settings UI: refresh API key on demand
+    // Settings UI: refresh API key on demand + help
     // -----------------------------
     async getSourceMenu(): Promise<DUISection> {
+        const helpLabel = App.createLabel({
+            id: "help_label",
+            label:
+                "If nothing loads, open mangahub.io in Safari once to satisfy the Cloudflare check, then come back here and tap Refresh.",
+            value: undefined,
+        });
+        const helpLink = App.createLink({
+            id: "help_link",
+            label: "Open mangahub.io in Safari",
+            value: SITE_URL,
+        });
         const refreshButton: DUIButton = App.createButton({
             id: "refresh_key",
             label: "Refresh API key",
@@ -474,7 +500,7 @@ export class MangaHub extends Source
             id: "main",
             header: "MangaHub Settings",
             isHidden: false,
-            rows: async () => [refreshButton as any],
+            rows: async () => [helpLabel, helpLink, refreshButton] as any,
         });
     }
 }

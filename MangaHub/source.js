@@ -735,7 +735,7 @@ var _Sources = (() => {
   var CDN_URL = "https://imgx.mghcdn.com";
   var API_PATH = "m01";
   var SOURCE_NAME = "MangaHub";
-  var SOURCE_VERSION = "1.0.3";
+  var SOURCE_VERSION = "1.0.4";
   var DEFAULT_HEADERS = {
     "x-origin": SITE_URL,
     "x-referer": `${SITE_URL}/`,
@@ -825,14 +825,14 @@ var _Sources = (() => {
     icon: "icon.png",
     author: "jakub",
     authorWebsite: "https://jboncler.github.io/mangahub-extension/",
-    description: "MangaHub (mangahub.io) source for Paperback 0.8. Uses the official GraphQL API at api.mghcdn.com. v1.0.3: fixed User-Agent rotation triggering Cloudflare blocks; search no longer fails closed.",
+    description: "MangaHub (mangahub.io) source for Paperback 0.8. v1.0.4: removed Cloudflare bypass intent (webview cannot pass MangaHub's bot challenge); use the in-app Safari link under Settings to obtain cookies, then Refresh.",
     contentRating: import_types.ContentRating.EVERYONE,
     websiteBaseURL: SITE_URL,
     sourceTags: [
       { text: "English", type: "info" },
       { text: "GraphQL", type: "default" }
     ],
-    intents: import_types.SourceIntents.MANGA_CHAPTERS | import_types.SourceIntents.HOMEPAGE_SECTIONS | import_types.SourceIntents.CLOUDFLARE_BYPASS_REQUIRED
+    intents: import_types.SourceIntents.MANGA_CHAPTERS | import_types.SourceIntents.HOMEPAGE_SECTIONS | import_types.SourceIntents.SETTINGS_UI
   };
   var MangaHubInterceptor = class {
     constructor(parent, stateManager) {
@@ -916,8 +916,10 @@ var _Sources = (() => {
         method: "GET",
         headers: {
           ...DEFAULT_HEADERS,
-          "User-Agent": getRandomUserAgent(),
-          "x-user-agent": getRandomUserAgent(),
+          // Desktop UA is more trusted by Cloudflare than mobile; mobile
+          // webviews often get an unsolvable "verify if human" page.
+          "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15",
+          "x-user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15",
           "x-sec-fetch-dest": "document",
           "x-sec-fetch-mode": "navigate",
           "Upgrade-Insecure-Requests": "1"
@@ -925,6 +927,13 @@ var _Sources = (() => {
       });
       try {
         const response = await this.requestManager.schedule(request, 5);
+        const body = response.data ?? "";
+        if (/<!DOCTYPE/i.test(body) || /Just a moment/i.test(body)) {
+          console.log(
+            "[MangaHub] homepage returned Cloudflare challenge; no key obtained"
+          );
+          return this.keyCache.mhubAccess;
+        }
         const setCookies = [];
         const headers = response.headers ?? {};
         for (const k of Object.keys(headers)) {
@@ -948,7 +957,10 @@ var _Sources = (() => {
             }
           }
         }
-      } catch {
+      } catch (e) {
+        console.log(
+          `[MangaHub] key fetch failed: ${e instanceof Error ? e.message : e}`
+        );
       }
       if (!force) {
         this.keyCache.useReloadKeyParam = !this.keyCache.useReloadKeyParam;
@@ -1163,9 +1175,19 @@ var _Sources = (() => {
       return this.parser.parseSearchResults(data);
     }
     // -----------------------------
-    // Settings UI: refresh API key on demand
+    // Settings UI: refresh API key on demand + help
     // -----------------------------
     async getSourceMenu() {
+      const helpLabel = App.createLabel({
+        id: "help_label",
+        label: "If nothing loads, open mangahub.io in Safari once to satisfy the Cloudflare check, then come back here and tap Refresh.",
+        value: void 0
+      });
+      const helpLink = App.createLink({
+        id: "help_link",
+        label: "Open mangahub.io in Safari",
+        value: SITE_URL
+      });
       const refreshButton = App.createButton({
         id: "refresh_key",
         label: "Refresh API key",
@@ -1183,7 +1205,7 @@ var _Sources = (() => {
         id: "main",
         header: "MangaHub Settings",
         isHidden: false,
-        rows: async () => [refreshButton]
+        rows: async () => [helpLabel, helpLink, refreshButton]
       });
     }
   };
