@@ -735,16 +735,12 @@ var _Sources = (() => {
   var CDN_URL = "https://imgx.mghcdn.com";
   var API_PATH = "m01";
   var SOURCE_NAME = "MangaHub";
-  var SOURCE_VERSION = "1.0.7";
+  var SOURCE_VERSION = "1.1.0";
   var DEFAULT_HEADERS = {
     "x-origin": SITE_URL,
     "x-referer": `${SITE_URL}/`,
     "Accept-Language": "en-US,en;q=0.9"
   };
-  function randomInt(min, max) {
-    return Math.floor(Math.random() * (max - min + 1)) + min;
-  }
-  var RATE_LIMIT_CHECK_PATTERN = /(api)?\s*rate\s*limit\s*(excessed)?|api\s*key\s*(invalid)?/i;
 
   // src/MangaHub/Parser.ts
   var Parser = class {
@@ -807,39 +803,43 @@ var _Sources = (() => {
   };
 
   // src/MangaHub/MangaHub.ts
-  var KEY_REFRESH_INTERVAL_MS = 30 * 60 * 1e3;
-  var RATE_LIMIT_BACKOFF_MS = 60 * 1e3;
+  var SITE_URL2 = "https://mangahub.io";
+  var KEY_STORE_NAME = "mhub_key";
+  var KEY_REFRESH_URL = `${SITE_URL2}/chapter/the-last-human/chapter-1?reloadKey=1`;
+  var BYPASS_URL = KEY_REFRESH_URL;
   var MangaHubInfo = {
     version: SOURCE_VERSION,
     name: SOURCE_NAME,
     icon: "icon.png",
     author: "jakub",
     authorWebsite: "https://jboncler.github.io/mangahub-extension/",
-    description: "MangaHub (mangahub.io) source for Paperback 0.8. v1.0.7: removed the in-app Cloudflare bypass (was looping on 'checking if human'); the extension now fetches mhub_access silently via requestManager, with a Safari link as a manual fallback.",
+    description: "MangaHub (mangahub.io) source for Paperback 0.8. v1.1.0: rebuilt around the working netsky/MangaHub pattern (CF bypass on a chapter page; mhub_access via stateManager).",
     contentRating: import_types.ContentRating.EVERYONE,
-    websiteBaseURL: SITE_URL,
+    websiteBaseURL: SITE_URL2,
     sourceTags: [
       { text: "English", type: "info" },
       { text: "GraphQL", type: "default" }
     ],
-    intents: import_types.SourceIntents.MANGA_CHAPTERS | import_types.SourceIntents.HOMEPAGE_SECTIONS | import_types.SourceIntents.SETTINGS_UI
+    intents: import_types.SourceIntents.MANGA_CHAPTERS | import_types.SourceIntents.HOMEPAGE_SECTIONS | import_types.SourceIntents.CLOUDFLARE_BYPASS_REQUIRED | import_types.SourceIntents.SETTINGS_UI
   };
   var MangaHubInterceptor = class {
-    constructor(parent, stateManager) {
+    constructor(parent) {
       this.parent = parent;
-      this.stateManager = stateManager;
     }
     async interceptRequest(request) {
       const headers = request.headers ?? {};
-      for (const k of Object.keys(DEFAULT_HEADERS)) {
-        if (!(k in headers)) headers[k] = DEFAULT_HEADERS[k];
+      if (!("User-Agent" in headers)) {
+        try {
+          headers["User-Agent"] = await this.parent.requestManager.getDefaultUserAgent();
+        } catch {
+          headers["User-Agent"] = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15";
+        }
       }
-      const key = await this.parent.getCachedKey();
+      if (!("Referer" in headers)) headers["Referer"] = `${SITE_URL2}/`;
+      if (!("Origin" in headers)) headers["Origin"] = SITE_URL2;
+      const key = await this.parent.getMhubAccess();
       if (key && !("x-mhub-access" in headers)) {
         headers["x-mhub-access"] = key;
-      }
-      if (!("User-Agent" in headers)) {
-        headers["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
       }
       request.headers = headers;
       return request;
@@ -856,184 +856,104 @@ var _Sources = (() => {
       this.requestManager = App.createRequestManager({
         requestsPerSecond: 2,
         requestTimeout: 2e4,
-        interceptor: new MangaHubInterceptor(this, this.stateManager)
+        interceptor: new MangaHubInterceptor(this)
       });
-      this.keyCache = {
-        mhubAccess: null,
-        fetchedAt: 0,
-        useReloadKeyParam: false
-      };
-      this.keyFetchInFlight = null;
     }
     // -----------------------------
-    // Cloudflare bypass: intentionally omitted.
-    //
-    // MangaHub's Cloudflare policy challenges the iOS in-app WKWebView with
-    // a "checking if human" / Google reCAPTCHA loop that Paperback cannot
-    // satisfy automatically, regardless of UA. Instead we:
-    //
-    //   1. Hit the GraphQL API (`api.mghcdn.com`) directly — search and
-    //      manga-info endpoints do NOT require `mhub_access`.
-    //   2. Fetch `mhub_access` lazily via requestManager.schedule from a
-    //      manga page (which sets it as a cookie in the response). The
-    //      request uses a desktop Chrome UA so CF lets it through.
-    //   3. If step 2 ever fails on a particular network, the Settings
-    //      screen exposes a "Open mangahub.io in Safari" link so the user
-    //      can prime `cf_clearance` for their IP in real Safari, and a
-    //      "Refresh API key" button to retry step 2.
+    // Cloudflare bypass: load a
+    // chapter page (less CF-aggressive
+    // than the homepage) so Paperback
+    // captures mhub_access into its
+    // cookie store, which the
+    // interceptor then re-uses.
     // -----------------------------
-    // -----------------------------
-    // Key management (mhub_access cookie)
-    // -----------------------------
-    isKeyExpired() {
-      return !this.keyCache.mhubAccess || Date.now() - this.keyCache.fetchedAt > KEY_REFRESH_INTERVAL_MS;
-    }
-    async getCachedKey() {
-      if (this.keyFetchInFlight) {
-        return this.keyFetchInFlight;
-      }
-      if (this.isKeyExpired()) {
-        this.keyFetchInFlight = this.refreshApiKey().finally(() => {
-          this.keyFetchInFlight = null;
-        });
-        return this.keyFetchInFlight;
-      }
-      return this.keyCache.mhubAccess;
-    }
-    async refreshApiKey(force = false) {
-      const url = force && this.keyCache.useReloadKeyParam ? `${SITE_URL}/?reloadKey=1` : SITE_URL;
-      const request = App.createRequest({
-        url,
+    async getCloudflareBypassRequestAsync() {
+      await this.stateManager.store(KEY_STORE_NAME, "mhub_access=; Max-Age=0; Path=/");
+      return App.createRequest({
+        url: BYPASS_URL,
         method: "GET",
         headers: {
-          ...DEFAULT_HEADERS,
-          // Desktop Chrome UA — MangaHub's CF flags Safari and mobile
-          // webviews more aggressively than desktop Chrome, often with
-          // a Google reCAPTCHA challenge that the webview can't render.
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-          "x-user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-          "x-sec-fetch-dest": "document",
-          "x-sec-fetch-mode": "navigate",
-          "Upgrade-Insecure-Requests": "1"
+          Referer: `${SITE_URL2}/`,
+          "User-Agent": await this.requestManager.getDefaultUserAgent()
+        }
+      });
+    }
+    // -----------------------------
+    // mhub_access key management
+    // (stored in stateManager, attached
+    // to every API request via the
+    // interceptor as `x-mhub-access`).
+    // -----------------------------
+    async getMhubAccess() {
+      const stored = await this.stateManager.retrieve(KEY_STORE_NAME);
+      return stored ?? "mhub_access=; Max-Age=0; Path=/";
+    }
+    async refreshAPIKey() {
+      try {
+        this.requestManager?.cookieStore?.getAllCookies().forEach((c) => {
+          try {
+            this.requestManager?.cookieStore?.removeCookie(c);
+          } catch {
+          }
+        });
+      } catch {
+      }
+      const request = App.createRequest({
+        url: KEY_REFRESH_URL,
+        method: "GET",
+        headers: {
+          Referer: `${SITE_URL2}/`,
+          "User-Agent": await this.requestManager.getDefaultUserAgent(),
+          Cookie: await this.getMhubAccess()
         }
       });
       try {
-        const response = await this.requestManager.schedule(request, 5);
-        const body = response.data ?? "";
-        if (/<!DOCTYPE/i.test(body) || /Just a moment/i.test(body)) {
-          console.log(
-            "[MangaHub] homepage returned Cloudflare challenge; no key obtained"
+        const response = await this.requestManager.schedule(request, 1);
+        const setCookie = response.headers?.["Set-Cookie"];
+        const match = /mhub_access=([^;]+)/.exec(
+          Array.isArray(setCookie) ? setCookie.join(",") : setCookie ?? ""
+        );
+        if (match && match[1]) {
+          const expires = Math.floor(Date.now() / 1e3) + 2 * 31 * 24 * 60 * 60;
+          await this.stateManager.store(
+            KEY_STORE_NAME,
+            `mhub_access=${match[1]}; Max-Age=${expires}; Path=/`
           );
-          return this.keyCache.mhubAccess;
-        }
-        const setCookies = [];
-        const headers = response.headers ?? {};
-        for (const k of Object.keys(headers)) {
-          if (k.toLowerCase() === "set-cookie") {
-            const v = headers[k];
-            if (Array.isArray(v)) setCookies.push(...v);
-            else if (v) setCookies.push(v);
-          }
-        }
-        for (const cookie of setCookies) {
-          const match = cookie.match(/(?:^|;\s*)mhub_access=([^;]+)/);
-          if (match && match[1]) {
-            const newKey = decodeURIComponent(match[1]);
-            if (newKey && newKey !== this.keyCache.mhubAccess) {
-              this.keyCache = {
-                mhubAccess: newKey,
-                fetchedAt: Date.now(),
-                useReloadKeyParam: this.keyCache.useReloadKeyParam
-              };
-              return newKey;
-            }
-          }
         }
       } catch (e) {
         console.log(
-          `[MangaHub] key fetch failed: ${e instanceof Error ? e.message : e}`
+          `[MangaHub] key refresh failed: ${e instanceof Error ? e.message : e}`
         );
       }
-      if (!force) {
-        this.keyCache.useReloadKeyParam = !this.keyCache.useReloadKeyParam;
-        return this.refreshApiKey(true);
-      }
-      return this.keyCache.mhubAccess;
-    }
-    checkResponseError(response) {
-      if (response.status === 403 || response.status === 503) {
-        throw new Error("Cloudflare Bypass Required");
-      }
-      if (response.status === 429) {
-        throw new Error("API rate limit exceeded");
-      }
     }
     // -----------------------------
-    // GraphQL request with rate-limit recovery
+    // GraphQL request helper.
+    // Throws on errors so callers can
+    // recover (e.g. chapter path will
+    // refresh the key on rate-limit).
     // -----------------------------
     async graphql(query) {
-      const initUseReload = this.keyCache.useReloadKeyParam;
-      let lastError;
-      for (let attempt = 0; attempt < 3; attempt++) {
-        try {
-          await this.getCachedKey();
-          const request = App.createRequest({
-            url: API_URL,
-            method: "POST",
-            headers: {
-              ...DEFAULT_HEADERS,
-              "Content-Type": "application/json",
-              "Accept": "application/json"
-            },
-            data: JSON.stringify({ query })
-          });
-          const response = await this.requestManager.schedule(request, 5);
-          if (response.status === 403 || response.status === 503) {
-            throw new Error("__CF_BYPASS_NEEDED__");
-          }
-          if (response.status === 429) {
-            throw new Error("API rate limit exceeded");
-          }
-          const data = JSON.parse(response.data ?? "{}");
-          const errors = data.errors ?? data.error;
-          if (errors) {
-            const message = Array.isArray(errors) ? errors[0]?.message ?? JSON.stringify(errors) : errors.message ?? JSON.stringify(errors);
-            throw new Error(String(message));
-          }
-          return data;
-        } catch (e) {
-          const msg = e instanceof Error ? e.message : String(e);
-          lastError = new Error(msg);
-          if (msg === "__CF_BYPASS_NEEDED__") {
-            throw lastError;
-          }
-          if (RATE_LIMIT_CHECK_PATTERN.test(msg)) {
-            if (attempt > 0 && initUseReload === this.keyCache.useReloadKeyParam) {
-              this.keyCache.useReloadKeyParam = !this.keyCache.useReloadKeyParam;
-            } else if (attempt > 0) {
-              throw lastError;
-            }
-            await new Promise((r) => setTimeout(r, RATE_LIMIT_BACKOFF_MS));
-            await this.refreshApiKey(true);
-          } else {
-            throw lastError;
-          }
-        }
+      const request = App.createRequest({
+        url: API_URL,
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json"
+        },
+        data: { query }
+      });
+      const response = await this.requestManager.schedule(request, 1);
+      let data;
+      try {
+        data = JSON.parse(response.data ?? "{}");
+      } catch (e) {
+        throw new Error("Invalid GraphQL response");
       }
-      throw lastError ?? new Error("GraphQL request failed");
-    }
-    // -----------------------------
-    // Recently-viewed cookie update (parity with hakuneko - stored for reference)
-    // -----------------------------
-    async updateRecentlyCookie(chapterNumber) {
-      const now = Date.now();
-      const value = encodeURIComponent(
-        `{"${now - randomInt(0, 1200)}":{"mangaID":${randomInt(
-          1,
-          3e4
-        )},"number":${Number(chapterNumber) - 1}}}`
-      );
-      await this.stateManager.store("recently_cookie", value);
+      if (data?.errors) {
+        const message = data.errors[0]?.message ?? JSON.stringify(data.errors);
+        throw new Error(message);
+      }
+      return data;
     }
     // -----------------------------
     // MangaProviding
@@ -1041,14 +961,12 @@ var _Sources = (() => {
     async getMangaDetails(mangaId) {
       const query = `{
             manga(x: ${API_PATH}, slug: "${mangaId.replace(/"/g, '\\"')}") {
-                id, slug, title, image, author, artist, description, released, status, serialization, type
+                id, slug, title, image, author, artist, description, released, status
             }
         }`;
       const data = await this.graphql(query);
       const m = data?.data?.manga ?? data?.manga;
-      if (!m) {
-        throw new Error(`Manga not found: ${mangaId}`);
-      }
+      if (!m) throw new Error(`Manga not found: ${mangaId}`);
       const thumb = m.image ? new URL(m.image, "https://thumb.mghcdn.com/").href : `https://thumb.mghcdn.com/${m.slug ?? mangaId}.jpg`;
       return App.createSourceManga({
         id: m.slug ?? mangaId,
@@ -1074,13 +992,24 @@ var _Sources = (() => {
       return this.parser.parseChapterList(data, mangaId);
     }
     async getChapterDetails(mangaId, chapterId) {
-      await this.updateRecentlyCookie(chapterId);
       const query = `{
             chapter(x: ${API_PATH}, slug: "${mangaId.replace(/"/g, '\\"')}", number: ${chapterId}) {
                 pages
             }
         }`;
-      const data = await this.graphql(query);
+      let data;
+      try {
+        data = await this.graphql(query);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        if (/rate\s*limit|api\s*key/i.test(msg)) {
+          await this.refreshAPIKey();
+          throw new Error(
+            "API LIMIT EXCEEDED! Try redoing the CloudFlare bypass or come back later."
+          );
+        }
+        throw e;
+      }
       const pages = this.parser.parsePageList(data, mangaId, chapterId);
       return App.createChapterDetails({
         id: pages.id,
@@ -1089,25 +1018,24 @@ var _Sources = (() => {
       });
     }
     getMangaShareUrl(mangaId) {
-      return `${SITE_URL}/manga/${mangaId}`;
+      return `${SITE_URL2}/manga/${mangaId}`;
     }
     // -----------------------------
     // SearchResultsProviding
     // -----------------------------
     async getSearchResults(query, metadata) {
-      const page = metadata?.page ?? 1;
+      const offset = metadata?.offset ?? 0;
       const term = (query.title ?? "").replace(/"/g, '\\"');
-      const offset = (page - 1) * 50;
       const gql = `{
             search(x: ${API_PATH}, q: "${term}", genre: "all", mod: ALPHABET, limit: 50, offset: ${offset}) {
-                rows { id, slug, title }
+                rows { id, slug, title, image, latestChapter }
             }
         }`;
       try {
         const data = await this.graphql(gql);
         const items = this.parser.parseSearchResults(data);
-        const nextPage = items.length === 50 ? { page: page + 1 } : void 0;
-        return App.createPagedResults({ results: items, metadata: nextPage });
+        const next = items.length === 50 ? { offset: offset + 50 } : void 0;
+        return App.createPagedResults({ results: items, metadata: next });
       } catch (e) {
         console.log(`[MangaHub] search failed: ${e instanceof Error ? e.message : e}`);
         return App.createPagedResults({ results: [], metadata: void 0 });
@@ -1118,86 +1046,144 @@ var _Sources = (() => {
     }
     // -----------------------------
     // HomePageSectionsProviding
+    //
+    // Netsky-style combined query —
+    // MangaHub returns multiple lists
+    // in a single GraphQL call, so the
+    // UI populates from one round-trip.
     // -----------------------------
     async getHomePageSections(sectionCallback) {
-      const popular = App.createHomeSection({
-        id: "popular",
-        title: "Popular Titles",
-        type: "singleRowNormal",
-        containsMoreItems: true
-      });
-      const latest = App.createHomeSection({
-        id: "latest",
-        title: "Latest Updates",
-        type: "singleRowNormal",
-        containsMoreItems: true
-      });
-      sectionCallback(popular);
-      sectionCallback(latest);
-      try {
-        const popularItems = await this.fetchHome("POPULAR", 1);
-        popular.items = popularItems;
-        sectionCallback(popular);
-      } catch (e) {
-        console.log(`[MangaHub] popular section failed: ${e instanceof Error ? e.message : e}`);
-      }
-      try {
-        const latestItems = await this.fetchHome("LATEST", 1);
-        latest.items = latestItems;
-        sectionCallback(latest);
-      } catch (e) {
-        console.log(`[MangaHub] latest section failed: ${e instanceof Error ? e.message : e}`);
-      }
-    }
-    async getViewMoreItems(homepageSectionId, metadata) {
-      const page = metadata?.page ?? 1;
-      const order = homepageSectionId === "latest" ? "LATEST" : "POPULAR";
-      const items = await this.fetchHome(order, page);
-      const nextPage = items.length === 50 ? { page: page + 1 } : void 0;
-      return App.createPagedResults({ results: items, metadata: nextPage });
-    }
-    async fetchHome(order, page) {
-      const offset = (page - 1) * 20;
-      const gql = `{
-            search(x: ${API_PATH}, q: "", genre: "all", mod: ${order}, limit: 20, offset: ${offset}) {
-                rows { id, slug, title }
+      const sections = [
+        App.createHomeSection({
+          id: "latest_popular",
+          title: "Latest Popular",
+          type: "singleRowNormal",
+          containsMoreItems: false
+        }),
+        App.createHomeSection({
+          id: "latest",
+          title: "Latest Updates",
+          type: "singleRowNormal",
+          containsMoreItems: true
+        }),
+        App.createHomeSection({
+          id: "popular",
+          title: "Popular Titles",
+          type: "singleRowNormal",
+          containsMoreItems: true
+        }),
+        App.createHomeSection({
+          id: "new",
+          title: "New Titles",
+          type: "singleRowNormal",
+          containsMoreItems: true
+        }),
+        App.createHomeSection({
+          id: "completed",
+          title: "Completed",
+          type: "singleRowNormal",
+          containsMoreItems: true
+        })
+      ];
+      for (const s of sections) sectionCallback(s);
+      const query = `query {
+            latest_popular: latestPopular(x: ${API_PATH}) {
+                id, title, slug, image, latestChapter
+            }
+            latest: latest(x: ${API_PATH}, limit: 30) {
+                id, title, slug, image, latestChapter
+            }
+            popular: search(x: ${API_PATH}, mod: POPULAR, limit: 30, offset: 0) {
+                rows { id, title, slug, image, latestChapter }
+            }
+            new: search(x: ${API_PATH}, mod: NEW, limit: 30, offset: 0) {
+                rows { id, title, slug, image, latestChapter }
+            }
+            completed: search(x: ${API_PATH}, mod: COMPLETED, limit: 30, offset: 0) {
+                rows { id, title, slug, image, latestChapter }
             }
         }`;
-      const data = await this.graphql(gql);
-      return this.parser.parseSearchResults(data);
+      try {
+        const data = await this.graphql(query);
+        this.populateSection(sections[0], data?.data?.latest_popular ?? data?.latest_popular ?? []);
+        this.populateSection(sections[1], data?.data?.latest ?? data?.latest ?? []);
+        this.populateSection(sections[2], data?.data?.popular?.rows ?? data?.popular?.rows ?? []);
+        this.populateSection(sections[3], data?.data?.new?.rows ?? data?.new?.rows ?? []);
+        this.populateSection(sections[4], data?.data?.completed?.rows ?? data?.completed?.rows ?? []);
+      } catch (e) {
+        console.log(`[MangaHub] homepage failed: ${e instanceof Error ? e.message : e}`);
+      }
+      for (const s of sections) sectionCallback(s);
+    }
+    populateSection(section, rows) {
+      const items = [];
+      for (const r of rows) {
+        if (!r?.slug) continue;
+        items.push({
+          mangaId: r.slug,
+          title: r.title ?? r.slug,
+          image: r.image ? new URL(r.image, "https://thumb.mghcdn.com/").href : `https://thumb.mghcdn.com/${r.slug}.jpg`,
+          subtitle: r.latestChapter ? `Ch. ${r.latestChapter}` : void 0
+        });
+      }
+      section.items = items;
+    }
+    async getViewMoreItems(homepageSectionId, metadata) {
+      const offset = metadata?.offset ?? 0;
+      const modMap = {
+        popular: "POPULAR",
+        new: "NEW",
+        completed: "COMPLETED",
+        latest: "LATEST"
+      };
+      const mod = modMap[homepageSectionId] ?? "POPULAR";
+      const gql = `{
+            search(x: ${API_PATH}, q: "", genre: "all", mod: ${mod}, limit: 30, offset: ${offset}) {
+                rows { id, title, slug, image, latestChapter }
+            }
+        }`;
+      try {
+        const data = await this.graphql(gql);
+        const rows = data?.data?.search?.rows ?? data?.search?.rows ?? [];
+        const items = [];
+        for (const r of rows) {
+          if (!r?.slug) continue;
+          items.push({
+            mangaId: r.slug,
+            title: r.title ?? r.slug,
+            image: r.image ? new URL(r.image, "https://thumb.mghcdn.com/").href : `https://thumb.mghcdn.com/${r.slug}.jpg`,
+            subtitle: r.latestChapter ? `Ch. ${r.latestChapter}` : void 0
+          });
+        }
+        const next = items.length === 30 ? { offset: offset + 30 } : void 0;
+        return App.createPagedResults({ results: items, metadata: next });
+      } catch (e) {
+        console.log(`[MangaHub] view-more failed: ${e instanceof Error ? e.message : e}`);
+        return App.createPagedResults({ results: [], metadata: void 0 });
+      }
     }
     // -----------------------------
-    // Settings UI: refresh API key on demand + help
+    // Settings UI
     // -----------------------------
     async getSourceMenu() {
       const helpLabel = App.createLabel({
         id: "help_label",
-        label: "Popular/Latest and search load directly from the API. If chapters fail with 'API rate limit exceeded', the source needs an mhub_access session cookie \u2014 tap the Safari link below to load mangahub.io, then tap Refresh.",
+        label: "Cloudflare bypass opens a MangaHub chapter page to set mhub_access. If CF is too strict, sections stay empty. Tap Refresh below to retry the key fetch manually.",
         value: void 0
-      });
-      const helpLink = App.createLink({
-        id: "help_link",
-        label: "Open mangahub.io in Safari",
-        value: SITE_URL
       });
       const refreshButton = App.createButton({
         id: "refresh_key",
         label: "Refresh API key",
         value: void 0,
         action: async () => {
-          this.keyCache = {
-            mhubAccess: null,
-            fetchedAt: 0,
-            useReloadKeyParam: false
-          };
-          await this.refreshApiKey();
+          await this.refreshAPIKey();
         }
       });
       return App.createDUISection({
         id: "main",
         header: "MangaHub Settings",
         isHidden: false,
-        rows: async () => [helpLabel, helpLink, refreshButton]
+        rows: async () => [helpLabel, refreshButton]
       });
     }
   };
