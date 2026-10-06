@@ -42,7 +42,7 @@ export const MangaHubInfo: SourceInfo = {
     author: "jakub",
     authorWebsite: "https://jboncler.github.io/mangahub-extension/",
     description:
-        "MangaHub (mangahub.io) source for Paperback 0.8. Uses the official GraphQL API at api.mghcdn.com. v1.0.1: API endpoint migrated from api2.mangahub.io.",
+        "MangaHub (mangahub.io) source for Paperback 0.8. Uses the official GraphQL API at api.mghcdn.com. v1.0.2: search pagination migrated from `page` to `offset`.",
     contentRating: ContentRating.EVERYONE,
     websiteBaseURL: SITE_URL,
     sourceTags: [
@@ -353,8 +353,9 @@ export class MangaHub extends Source
     ): Promise<PagedResults> {
         const page = (metadata as any)?.page ?? 1;
         const term = (query.title ?? "").replace(/"/g, '\\"');
+        const offset = (page - 1) * 50;
         const gql = `{
-            search(x: ${API_PATH}, q: "${term}", genre: "all", mod: ALPHABET, limit: 50, page: ${page}) {
+            search(x: ${API_PATH}, q: "${term}", genre: "all", mod: ALPHABET, limit: 50, offset: ${offset}) {
                 rows { id, slug, title }
             }
         }`;
@@ -395,15 +396,15 @@ export class MangaHub extends Source
             const popularItems = await this.fetchHome("POPULAR", 1);
             popular.items = popularItems;
             sectionCallback(popular);
-        } catch {
-            // ignore
+        } catch (e) {
+            console.log(`[MangaHub] popular section failed: ${e instanceof Error ? e.message : e}`);
         }
         try {
             const latestItems = await this.fetchHome("LATEST", 1);
             latest.items = latestItems;
             sectionCallback(latest);
-        } catch {
-            // ignore
+        } catch (e) {
+            console.log(`[MangaHub] latest section failed: ${e instanceof Error ? e.message : e}`);
         }
     }
 
@@ -419,8 +420,9 @@ export class MangaHub extends Source
     }
 
     private async fetchHome(order: string, page: number): Promise<PartialSourceManga[]> {
+        const offset = (page - 1) * 20;
         const gql = `{
-            search(x: ${API_PATH}, q: "", genre: "all", mod: ${order}, limit: 20, page: ${page}) {
+            search(x: ${API_PATH}, q: "", genre: "all", mod: ${order}, limit: 20, offset: ${offset}) {
                 rows { id, slug, title }
             }
         }`;
