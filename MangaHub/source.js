@@ -735,7 +735,7 @@ var _Sources = (() => {
   var CDN_URL = "https://imgx.mghcdn.com";
   var API_PATH = "m01";
   var SOURCE_NAME = "MangaHub";
-  var SOURCE_VERSION = "1.0.1";
+  var SOURCE_VERSION = "1.0.2";
   var DEFAULT_HEADERS = {
     "x-origin": SITE_URL,
     "x-referer": `${SITE_URL}/`,
@@ -825,7 +825,7 @@ var _Sources = (() => {
     icon: "icon.png",
     author: "jakub",
     authorWebsite: "https://jboncler.github.io/mangahub-extension/",
-    description: "MangaHub (mangahub.io) source for Paperback 0.8. Uses the official GraphQL API at api.mghcdn.com. v1.0.1: API endpoint migrated from api2.mangahub.io.",
+    description: "MangaHub (mangahub.io) source for Paperback 0.8. Uses the official GraphQL API at api.mghcdn.com. v1.0.2: search pagination migrated from `page` to `offset`.",
     contentRating: import_types.ContentRating.EVERYONE,
     websiteBaseURL: SITE_URL,
     sourceTags: [
@@ -1086,8 +1086,9 @@ var _Sources = (() => {
     async getSearchResults(query, metadata) {
       const page = metadata?.page ?? 1;
       const term = (query.title ?? "").replace(/"/g, '\\"');
+      const offset = (page - 1) * 50;
       const gql = `{
-            search(x: ${API_PATH}, q: "${term}", genre: "all", mod: ALPHABET, limit: 50, page: ${page}) {
+            search(x: ${API_PATH}, q: "${term}", genre: "all", mod: ALPHABET, limit: 50, offset: ${offset}) {
                 rows { id, slug, title }
             }
         }`;
@@ -1121,13 +1122,15 @@ var _Sources = (() => {
         const popularItems = await this.fetchHome("POPULAR", 1);
         popular.items = popularItems;
         sectionCallback(popular);
-      } catch {
+      } catch (e) {
+        console.log(`[MangaHub] popular section failed: ${e instanceof Error ? e.message : e}`);
       }
       try {
         const latestItems = await this.fetchHome("LATEST", 1);
         latest.items = latestItems;
         sectionCallback(latest);
-      } catch {
+      } catch (e) {
+        console.log(`[MangaHub] latest section failed: ${e instanceof Error ? e.message : e}`);
       }
     }
     async getViewMoreItems(homepageSectionId, metadata) {
@@ -1138,8 +1141,9 @@ var _Sources = (() => {
       return App.createPagedResults({ results: items, metadata: nextPage });
     }
     async fetchHome(order, page) {
+      const offset = (page - 1) * 20;
       const gql = `{
-            search(x: ${API_PATH}, q: "", genre: "all", mod: ${order}, limit: 20, page: ${page}) {
+            search(x: ${API_PATH}, q: "", genre: "all", mod: ${order}, limit: 20, offset: ${offset}) {
                 rows { id, slug, title }
             }
         }`;
