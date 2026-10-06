@@ -735,7 +735,7 @@ var _Sources = (() => {
   var CDN_URL = "https://imgx.mghcdn.com";
   var API_PATH = "m01";
   var SOURCE_NAME = "MangaHub";
-  var SOURCE_VERSION = "1.0.2";
+  var SOURCE_VERSION = "1.0.3";
   var DEFAULT_HEADERS = {
     "x-origin": SITE_URL,
     "x-referer": `${SITE_URL}/`,
@@ -825,7 +825,7 @@ var _Sources = (() => {
     icon: "icon.png",
     author: "jakub",
     authorWebsite: "https://jboncler.github.io/mangahub-extension/",
-    description: "MangaHub (mangahub.io) source for Paperback 0.8. Uses the official GraphQL API at api.mghcdn.com. v1.0.2: search pagination migrated from `page` to `offset`.",
+    description: "MangaHub (mangahub.io) source for Paperback 0.8. Uses the official GraphQL API at api.mghcdn.com. v1.0.3: fixed User-Agent rotation triggering Cloudflare blocks; search no longer fails closed.",
     contentRating: import_types.ContentRating.EVERYONE,
     websiteBaseURL: SITE_URL,
     sourceTags: [
@@ -849,7 +849,7 @@ var _Sources = (() => {
         headers["x-mhub-access"] = key;
       }
       if (!("User-Agent" in headers)) {
-        headers["User-Agent"] = getRandomUserAgent();
+        headers["User-Agent"] = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15";
       }
       request.headers = headers;
       return request;
@@ -978,14 +978,18 @@ var _Sources = (() => {
             method: "POST",
             headers: {
               ...DEFAULT_HEADERS,
-              "User-Agent": getRandomUserAgent(),
               "Content-Type": "application/json",
               "Accept": "application/json"
             },
             data: JSON.stringify({ query })
           });
           const response = await this.requestManager.schedule(request, 5);
-          this.checkResponseError(response);
+          if (response.status === 403 || response.status === 503) {
+            throw new Error("__CF_BYPASS_NEEDED__");
+          }
+          if (response.status === 429) {
+            throw new Error("API rate limit exceeded");
+          }
           const data = JSON.parse(response.data ?? "{}");
           const errors = data.errors ?? data.error;
           if (errors) {
@@ -996,6 +1000,9 @@ var _Sources = (() => {
         } catch (e) {
           const msg = e instanceof Error ? e.message : String(e);
           lastError = new Error(msg);
+          if (msg === "__CF_BYPASS_NEEDED__") {
+            throw lastError;
+          }
           if (RATE_LIMIT_CHECK_PATTERN.test(msg)) {
             if (attempt > 0 && initUseReload === this.keyCache.useReloadKeyParam) {
               this.keyCache.useReloadKeyParam = !this.keyCache.useReloadKeyParam;
@@ -1092,10 +1099,15 @@ var _Sources = (() => {
                 rows { id, slug, title }
             }
         }`;
-      const data = await this.graphql(gql);
-      const items = this.parser.parseSearchResults(data);
-      const nextPage = items.length === 50 ? { page: page + 1 } : void 0;
-      return App.createPagedResults({ results: items, metadata: nextPage });
+      try {
+        const data = await this.graphql(gql);
+        const items = this.parser.parseSearchResults(data);
+        const nextPage = items.length === 50 ? { page: page + 1 } : void 0;
+        return App.createPagedResults({ results: items, metadata: nextPage });
+      } catch (e) {
+        console.log(`[MangaHub] search failed: ${e instanceof Error ? e.message : e}`);
+        return App.createPagedResults({ results: [], metadata: void 0 });
+      }
     }
     async getSearchTags() {
       return [];

@@ -5,7 +5,7 @@ export const CDN_URL = "https://imgx.mghcdn.com";
 export const API_PATH = "m01";
 export const SOURCE_NAME = "MangaHub";
 export const SOURCE_ID = "MangaHub";
-export const SOURCE_VERSION = "1.0.2";
+export const SOURCE_VERSION = "1.0.3";
 
 export const DEFAULT_HEADERS = {
     "x-origin": SITE_URL,
