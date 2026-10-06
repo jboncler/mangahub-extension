@@ -735,7 +735,7 @@ var _Sources = (() => {
   var CDN_URL = "https://imgx.mghcdn.com";
   var API_PATH = "m01";
   var SOURCE_NAME = "MangaHub";
-  var SOURCE_VERSION = "1.0.5";
+  var SOURCE_VERSION = "1.0.6";
   var DEFAULT_HEADERS = {
     "x-origin": SITE_URL,
     "x-referer": `${SITE_URL}/`,
@@ -815,7 +815,7 @@ var _Sources = (() => {
     icon: "icon.png",
     author: "jakub",
     authorWebsite: "https://jboncler.github.io/mangahub-extension/",
-    description: "MangaHub (mangahub.io) source for Paperback 0.8. v1.0.5: CF bypass restored, now targets a manga page (less CF-aggressive than the homepage) like netsky's extension.",
+    description: "MangaHub (mangahub.io) source for Paperback 0.8. v1.0.6: switched all UAs to desktop Chrome to avoid CF reCAPTCHA challenges that appear in mobile/Safari webviews.",
     contentRating: import_types.ContentRating.EVERYONE,
     websiteBaseURL: SITE_URL,
     sourceTags: [
@@ -839,7 +839,7 @@ var _Sources = (() => {
         headers["x-mhub-access"] = key;
       }
       if (!("User-Agent" in headers)) {
-        headers["User-Agent"] = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15";
+        headers["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
       }
       request.headers = headers;
       return request;
@@ -882,8 +882,11 @@ var _Sources = (() => {
         method: "GET",
         headers: {
           ...DEFAULT_HEADERS,
-          "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15",
-          "x-user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15",
+          // Desktop Chrome UA — CF has historically trusted it more than
+          // Safari or mobile webviews, which often get unsolvable
+          // reCAPTCHA challenges that look like "opened google.com".
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+          "x-user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
           "x-sec-fetch-dest": "document",
           "x-sec-fetch-mode": "navigate",
           "Upgrade-Insecure-Requests": "1"
@@ -915,10 +918,11 @@ var _Sources = (() => {
         method: "GET",
         headers: {
           ...DEFAULT_HEADERS,
-          // Desktop UA is more trusted by Cloudflare than mobile; mobile
-          // webviews often get an unsolvable "verify if human" page.
-          "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15",
-          "x-user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15",
+          // Desktop Chrome UA — MangaHub's CF flags Safari and mobile
+          // webviews more aggressively than desktop Chrome, often with
+          // a Google reCAPTCHA challenge that the webview can't render.
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+          "x-user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
           "x-sec-fetch-dest": "document",
           "x-sec-fetch-mode": "navigate",
           "Upgrade-Insecure-Requests": "1"
