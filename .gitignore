@@ -1,5 +1,4 @@
 node_modules/
 lib/
-bundles/
 *.log
 .DS_Store
