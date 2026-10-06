@@ -724,8 +724,8 @@ var _Sources = (() => {
   // src/MangaHubAlt/MangaHubAlt.ts
   var MangaHubAlt_exports = {};
   __export(MangaHubAlt_exports, {
-    MangaHubAltInfo: () => MangaHubAltInfo,
-    Mangahub: () => Mangahub
+    MangaHubAlt: () => MangaHubAlt,
+    MangaHubAltInfo: () => MangaHubAltInfo
   });
   var import_types = __toESM(require_lib());
 
@@ -1575,7 +1575,7 @@ var _Sources = (() => {
     ],
     intents: import_types.SourceIntents.MANGA_CHAPTERS | import_types.SourceIntents.HOMEPAGE_SECTIONS | import_types.SourceIntents.CLOUDFLARE_BYPASS_REQUIRED
   };
-  var Mangahub = class {
+  var MangaHubAlt = class {
     constructor() {
       this.requestManager = App.createRequestManager({
         requestsPerSecond: 2,

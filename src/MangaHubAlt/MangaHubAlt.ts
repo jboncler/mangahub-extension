@@ -58,7 +58,7 @@ export const MangaHubAltInfo: SourceInfo = {
     intents: SourceIntents.MANGA_CHAPTERS | SourceIntents.HOMEPAGE_SECTIONS | SourceIntents.CLOUDFLARE_BYPASS_REQUIRED
 }
 
-export class Mangahub implements SearchResultsProviding, MangaProviding, ChapterProviding, HomePageSectionsProviding {
+export class MangaHubAlt implements SearchResultsProviding, MangaProviding, ChapterProviding, HomePageSectionsProviding {
 
     requestManager = App.createRequestManager({
         requestsPerSecond: 2,
