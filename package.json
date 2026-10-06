@@ -2,7 +2,7 @@
   "name": "mangahub-paperback-extension",
   "version": "1.0.0",
   "repositoryName": "MangaHub Extension",
-  "repositoryBaseURL": "https://jboncler.github.io/mangahub-extension",
+  "baseURL": "https://jboncler.github.io/mangahub-extension/",
   "description": "Paperback 0.8 extension for MangaHub (mangahub.io).",
   "main": "index.js",
   "author": "jakub",

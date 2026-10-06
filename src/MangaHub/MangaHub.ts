@@ -40,7 +40,7 @@ export const MangaHubInfo: SourceInfo = {
     name: SOURCE_NAME,
     icon: "icon.png",
     author: "jakub",
-    authorWebsite: "https://github.com",
+    authorWebsite: "https://jboncler.github.io/mangahub-extension/",
     description:
         "MangaHub (mangahub.io) source for Paperback 0.8. Uses the official GraphQL API. Auto-refreshes the mhub_access API key on rate-limit or invalid-key errors.",
     contentRating: ContentRating.EVERYONE,
