@@ -812,6 +812,7 @@ var _Sources = (() => {
     const chapters = [];
     for (const ch of data ?? []) {
       const number = ch.number;
+      if (number === void 0 || number === null) continue;
       const title = ch.title ? ch.title : "Chapter " + number;
       const date = ch.date ? new Date(ch.date) : /* @__PURE__ */ new Date(0);
       chapters.push(
@@ -819,7 +820,7 @@ var _Sources = (() => {
           id: String(number),
           name: title,
           langCode: "\u{1F1EC}\u{1F1E7}",
-          chapNum: number,
+          chapNum: Number(number),
           time: date
         })
       );
@@ -1559,12 +1560,12 @@ var _Sources = (() => {
   var MH_API_DOMAIN = "https://api.mghcdn.com/graphql";
   var MH_CDN_DOMAIN = "https://imgx.mghcdn.com";
   var MangaHubAltInfo = {
-    version: "3.2.4",
+    version: "3.2.5",
     name: "MangaHub (Alt)",
     icon: "icon.png",
     author: "jakub",
     authorWebsite: "https://jboncler.github.io/mangahub-extension/",
-    description: "MangaHub (mangahub.io) for Paperback 0.8. Same as netsky/Mangahub but bundled with optional AES-GCM decrypt (PR #123); falls back to plaintext pages when encryption is unavailable.",
+    description: "MangaHub (mangahub.io) for Paperback 0.8. v3.2.5: graceful error handling on all read methods (no more app-wide crashes on rate-limit / CF blocks); Settings UI with Refresh API key + Reset session buttons. AES-GCM decryption (netsky PR #123) is enabled automatically when the site serves encrypted pages.",
     contentRating: import_types.ContentRating.MATURE,
     websiteBaseURL: MH_DOMAIN,
     sourceTags: [
@@ -1580,7 +1581,7 @@ var _Sources = (() => {
       super(...arguments);
       this.requestManager = App.createRequestManager({
         requestsPerSecond: 2,
-        requestTimeout: 15e3,
+        requestTimeout: 2e4,
         interceptor: {
           interceptRequest: async (request) => {
             request.headers = {
@@ -1741,36 +1742,36 @@ Try the CloudFlare bypass again or come back later.`);
       throw new Error(`MangaHub returned no data for ${what}. It may have been removed from the site.`);
     }
     async getSearchTags() {
-      const request = App.createRequest({
-        url: MH_API_DOMAIN,
-        method: "POST",
-        headers: {
-          "accept": "application/json",
-          "content-type": "application/json"
-        },
-        data: {
-          query: `query {
-                    genres {
-                      id
-                      slug
-                      title
-                    }
-                }`
-        }
-      });
-      const response = await this.requestManager.schedule(request, 1);
-      let data;
       try {
-        data = JSON.parse(response.data);
+        const request = App.createRequest({
+          url: MH_API_DOMAIN,
+          method: "POST",
+          headers: {
+            "accept": "application/json",
+            "content-type": "application/json"
+          },
+          data: {
+            query: `query {
+                        genres {
+                          id
+                          slug
+                          title
+                        }
+                    }`
+          }
+        });
+        const response = await this.requestManager.schedule(request, 1);
+        const data = JSON.parse(response.data);
+        if (!data?.data?.genres || data.data.genres.length === 0) return [];
+        const arrayTags = [];
+        for (const genre of data.data.genres) {
+          arrayTags.push({ id: genre.slug, label: genre.title });
+        }
+        return [App.createTagSection({ id: "0", label: "genres", tags: arrayTags.map((x) => App.createTag(x)) })];
       } catch (e) {
-        throw new Error(`${e}`);
+        console.log(`[MangaHub (Alt)] getSearchTags failed: ${e instanceof Error ? e.message : e}`);
+        return [];
       }
-      if (data.data.genres?.length == 0) throw new Error("Failed to parse genres property from data object!");
-      const arrayTags = [];
-      for (const genre of data.data.genres) {
-        arrayTags.push({ id: genre.slug, label: genre.title });
-      }
-      return [App.createTagSection({ id: "0", label: "genres", tags: arrayTags.map((x) => App.createTag(x)) })];
     }
     async getHomePageSections(sectionCallback) {
       const request = App.createRequest({
@@ -1826,12 +1827,12 @@ Try the CloudFlare bypass again or come back later.`);
             }`
         }
       });
-      const response = await this.requestManager.schedule(request, 1);
       try {
+        const response = await this.requestManager.schedule(request, 1);
         const data = JSON.parse(response.data);
         parseHomeSections(data, sectionCallback);
       } catch (e) {
-        throw new Error(`${e}`);
+        console.log(`[MangaHub (Alt)] getHomePageSections failed: ${e instanceof Error ? e.message : e}`);
       }
     }
     async getViewMoreItems(homepageSectionId, metadata) {
@@ -1884,19 +1885,18 @@ Try the CloudFlare bypass again or come back later.`);
             }`
         }
       });
-      const response = await this.requestManager.schedule(request, 1);
-      let data;
       try {
-        data = JSON.parse(response.data);
+        const response = await this.requestManager.schedule(request, 1);
+        const data = JSON.parse(response.data);
+        const manga = parseViewMore(homepageSectionId, data);
+        return App.createPagedResults({
+          results: manga,
+          metadata: manga.length === 0 ? void 0 : { offset: offset + 30 }
+        });
       } catch (e) {
-        throw new Error(`${e}`);
+        console.log(`[MangaHub (Alt)] getViewMoreItems failed: ${e instanceof Error ? e.message : e}`);
+        return App.createPagedResults({ results: [], metadata: void 0 });
       }
-      const manga = parseViewMore(homepageSectionId, data);
-      metadata = { offset: offset + 30 };
-      return App.createPagedResults({
-        results: manga,
-        metadata
-      });
     }
     async getSearchResults(query, metadata) {
       const offset = metadata?.offset ?? 0;
@@ -1954,31 +1954,30 @@ Try the CloudFlare bypass again or come back later.`);
           })
         }
       ];
-      const promises = [];
-      let manga = [];
-      for (const req of requests) {
-        promises.push(this.requestManager.schedule(req.request, 1).then((response) => {
-          let data;
+      try {
+        const responses = await Promise.all(requests.map((r) => this.requestManager.schedule(r.request, 1)));
+        let manga = [];
+        for (const response of responses) {
           try {
-            data = JSON.parse(response.data);
-          } catch (e) {
-            throw new Error(`${e}`);
+            const data = JSON.parse(response.data);
+            manga = manga.concat(parseSearch(data));
+          } catch {
           }
-          manga = manga.concat(parseSearch(data));
-        }));
+        }
+        const seen = /* @__PURE__ */ new Set();
+        manga = manga.filter((x) => {
+          const duplicate = seen.has(x.mangaId);
+          seen.add(x.mangaId);
+          return !duplicate;
+        });
+        return App.createPagedResults({
+          results: manga,
+          metadata: manga.length === 0 ? void 0 : { offset: offset + 30 }
+        });
+      } catch (e) {
+        console.log(`[MangaHub (Alt)] getSearchResults failed: ${e instanceof Error ? e.message : e}`);
+        return App.createPagedResults({ results: [], metadata: void 0 });
       }
-      await Promise.all(promises);
-      const seen = /* @__PURE__ */ new Set();
-      manga = manga.filter((x) => {
-        const duplicate = seen.has(x.mangaId);
-        seen.add(x.mangaId);
-        return !duplicate;
-      });
-      metadata = { offset: offset + 30 };
-      return App.createPagedResults({
-        results: manga,
-        metadata
-      });
     }
     async getCloudflareBypassRequestAsync() {
       await this.stateManager.store("userAgent", "null");

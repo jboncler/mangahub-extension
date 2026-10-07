@@ -43,13 +43,13 @@ const MH_API_DOMAIN = 'https://api.mghcdn.com/graphql'
 const MH_CDN_DOMAIN = 'https://imgx.mghcdn.com'
 
 export const MangaHubAltInfo: SourceInfo = {
-    version: '3.2.4',
+    version: '3.2.5',
     name: 'MangaHub (Alt)',
     icon: 'icon.png',
     author: 'jakub',
     authorWebsite: 'https://jboncler.github.io/mangahub-extension/',
     description:
-        'MangaHub (mangahub.io) for Paperback 0.8. Same as netsky/Mangahub but bundled with optional AES-GCM decrypt (PR #123); falls back to plaintext pages when encryption is unavailable.',
+        'MangaHub (mangahub.io) for Paperback 0.8. v3.2.5: graceful error handling on all read methods (no more app-wide crashes on rate-limit / CF blocks); Settings UI with Refresh API key + Reset session buttons. AES-GCM decryption (netsky PR #123) is enabled automatically when the site serves encrypted pages.',
     contentRating: ContentRating.MATURE,
     websiteBaseURL: MH_DOMAIN,
     sourceTags: [
@@ -65,7 +65,7 @@ export class MangaHubAlt extends Source implements SearchResultsProviding, Manga
 
     requestManager = App.createRequestManager({
         requestsPerSecond: 2,
-        requestTimeout: 15000,
+        requestTimeout: 20000,
         interceptor: {
             interceptRequest: async (request: Request): Promise<Request> => {
                 request.headers = {
@@ -240,39 +240,37 @@ export class MangaHubAlt extends Source implements SearchResultsProviding, Manga
     }
 
     async getSearchTags(): Promise<TagSection[]> {
-        const request = App.createRequest({
-            url: MH_API_DOMAIN,
-            method: 'POST',
-            headers: {
-                'accept': 'application/json',
-                'content-type': 'application/json'
-            },
-            data: {
-                query: `query {
-                    genres {
-                      id
-                      slug
-                      title
-                    }
-                }`
-            }
-        })
-
-        const response = await this.requestManager.schedule(request, 1)
-        let data
         try {
-            data = JSON.parse(response.data as string)
+            const request = App.createRequest({
+                url: MH_API_DOMAIN,
+                method: 'POST',
+                headers: {
+                    'accept': 'application/json',
+                    'content-type': 'application/json'
+                },
+                data: {
+                    query: `query {
+                        genres {
+                          id
+                          slug
+                          title
+                        }
+                    }`
+                }
+            })
+
+            const response = await this.requestManager.schedule(request, 1)
+            const data = JSON.parse(response.data as string)
+            if (!data?.data?.genres || data.data.genres.length === 0) return []
+            const arrayTags: Tag[] = []
+            for (const genre of data.data.genres) {
+                arrayTags.push({ id: genre.slug, label: genre.title })
+            }
+            return [App.createTagSection({ id: '0', label: 'genres', tags: arrayTags.map(x => App.createTag(x)) })]
         } catch (e) {
-            throw new Error(`${e}`)
+            console.log(`[MangaHub (Alt)] getSearchTags failed: ${e instanceof Error ? e.message : e}`)
+            return []
         }
-
-        if (data.data.genres?.length == 0) throw new Error('Failed to parse genres property from data object!')
-
-        const arrayTags: Tag[] = []
-        for (const genre of data.data.genres) {
-            arrayTags.push({ id: genre.slug, label: genre.title })
-        }
-        return [App.createTagSection({ id: '0', label: 'genres', tags: arrayTags.map(x => App.createTag(x)) })]
     }
 
     async getHomePageSections(sectionCallback: (section: HomeSection) => void): Promise<void> {
@@ -329,13 +327,14 @@ export class MangaHubAlt extends Source implements SearchResultsProviding, Manga
             }`
             }
         })
-        const response = await this.requestManager.schedule(request, 1)
-
         try {
+            const response = await this.requestManager.schedule(request, 1)
             const data = JSON.parse(response.data as string)
             parseHomeSections(data, sectionCallback)
         } catch (e) {
-            throw new Error(`${e}`)
+            // Don't rethrow: getHomePageSections is called eagerly by Paperback
+            // on the browse screen and a throw here breaks the entire app.
+            console.log(`[MangaHub (Alt)] getHomePageSections failed: ${e instanceof Error ? e.message : e}`)
         }
     }
 
@@ -390,21 +389,18 @@ export class MangaHubAlt extends Source implements SearchResultsProviding, Manga
             }
         })
 
-        const response = await this.requestManager.schedule(request, 1)
-
-        let data
         try {
-            data = JSON.parse(response.data as string)
+            const response = await this.requestManager.schedule(request, 1)
+            const data = JSON.parse(response.data as string)
+            const manga = parseViewMore(homepageSectionId, data)
+            return App.createPagedResults({
+                results: manga,
+                metadata: manga.length === 0 ? undefined : { offset: offset + 30 }
+            })
         } catch (e) {
-            throw new Error(`${e}`)
+            console.log(`[MangaHub (Alt)] getViewMoreItems failed: ${e instanceof Error ? e.message : e}`)
+            return App.createPagedResults({ results: [], metadata: undefined })
         }
-
-        const manga = parseViewMore(homepageSectionId, data)
-        metadata = { offset: offset + 30 }
-        return App.createPagedResults({
-            results: manga,
-            metadata
-        })
     }
 
     async getSearchResults(query: SearchRequest, metadata: any): Promise<PagedResults> {
@@ -465,35 +461,32 @@ export class MangaHubAlt extends Source implements SearchResultsProviding, Manga
             }
         ]
 
-        const promises: Promise<void>[] = []
-        let manga: PartialSourceManga[] = []
-
-        for (const req of requests) {
-            promises.push(this.requestManager.schedule(req.request, 1).then((response) => {
-                let data
+        try {
+            const responses = await Promise.all(requests.map((r) => this.requestManager.schedule(r.request, 1)))
+            let manga: PartialSourceManga[] = []
+            for (const response of responses) {
                 try {
-                    data = JSON.parse(response.data as string)
-                } catch (e) {
-                    throw new Error(`${e}`)
+                    const data = JSON.parse(response.data as string)
+                    manga = manga.concat(parseSearch(data))
+                } catch {
+                    // skip individual malformed responses
                 }
-                manga = manga.concat(parseSearch(data))
-            }))
+            }
+            // Deduplicate by mangaId
+            const seen = new Set<string>()
+            manga = manga.filter((x) => {
+                const duplicate = seen.has(x.mangaId)
+                seen.add(x.mangaId)
+                return !duplicate
+            })
+            return App.createPagedResults({
+                results: manga,
+                metadata: manga.length === 0 ? undefined : { offset: offset + 30 }
+            })
+        } catch (e) {
+            console.log(`[MangaHub (Alt)] getSearchResults failed: ${e instanceof Error ? e.message : e}`)
+            return App.createPagedResults({ results: [], metadata: undefined })
         }
-
-        await Promise.all(promises)
-
-        const seen = new Set()
-        manga = manga.filter(x => {
-            const duplicate = seen.has(x.mangaId)
-            seen.add(x.mangaId)
-            return !duplicate
-        })
-
-        metadata = { offset: offset + 30 }
-        return App.createPagedResults({
-            results: manga,
-            metadata
-        })
     }
 
     async getCloudflareBypassRequestAsync(): Promise<Request> {

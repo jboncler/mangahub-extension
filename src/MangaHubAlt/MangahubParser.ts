@@ -95,25 +95,26 @@ export function parseMangaDetails(data: any, mangaId: string): SourceManga {
 }
 
 export function parseChapters(data: any[], mangaId: string): Chapter[] {
-    const chapters: Chapter[] = [];
+    const chapters: Chapter[] = []
     for (const ch of data ?? []) {
-        const number = ch.number;
-        const title = ch.title ? ch.title : "Chapter " + number;
-        const date = ch.date ? new Date(ch.date) : new Date(0);
+        const number = ch.number
+        if (number === undefined || number === null) continue
+        const title = ch.title ? ch.title : "Chapter " + number
+        const date = ch.date ? new Date(ch.date) : new Date(0)
         chapters.push(
             App.createChapter({
                 id: String(number),
                 name: title,
                 langCode: "🇬🇧",
-                chapNum: number,
+                chapNum: Number(number),
                 time: date,
             })
-        );
+        )
     }
     if (chapters.length === 0) {
-        throw new Error(`Couldn't find any chapters for mangaId: ${mangaId}!`);
+        throw new Error(`Couldn't find any chapters for mangaId: ${mangaId}!`)
     }
-    return chapters;
+    return chapters
 }
 
 function toPartial(manga: any, collectedIds: number[]): PartialSourceManga | null {
