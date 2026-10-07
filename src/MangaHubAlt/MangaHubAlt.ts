@@ -6,6 +6,7 @@ import {
     SearchRequest,
     PagedResults,
     SourceInfo,
+    Source,
     BadgeColor,
     TagSection,
     Tag,
@@ -42,7 +43,7 @@ const MH_API_DOMAIN = 'https://api.mghcdn.com/graphql'
 const MH_CDN_DOMAIN = 'https://imgx.mghcdn.com'
 
 export const MangaHubAltInfo: SourceInfo = {
-    version: '3.2.3',
+    version: '3.2.4',
     name: 'MangaHub (Alt)',
     icon: 'icon.png',
     author: 'jakub',
@@ -60,7 +61,7 @@ export const MangaHubAltInfo: SourceInfo = {
     intents: SourceIntents.MANGA_CHAPTERS | SourceIntents.HOMEPAGE_SECTIONS | SourceIntents.CLOUDFLARE_BYPASS_REQUIRED | SourceIntents.SETTINGS_UI
 }
 
-export class MangaHubAlt implements SearchResultsProviding, MangaProviding, ChapterProviding, HomePageSectionsProviding {
+export class MangaHubAlt extends Source implements SearchResultsProviding, MangaProviding, ChapterProviding, HomePageSectionsProviding {
 
     requestManager = App.createRequestManager({
         requestsPerSecond: 2,
@@ -632,21 +633,18 @@ export class MangaHubAlt implements SearchResultsProviding, MangaProviding, Chap
                 "MangaHub enforces a server-side rate limit (~10 chapters per 20-60 min per session). " +
                 "It cannot be bypassed from the client. If you hit 'API rate limit excessed', wait for the " +
                 "window to reset, or use 'Reset session' below to start a fresh one.",
-            value: undefined as any,
         });
         const refreshKeyBtn: DUIButton = App.createDUIButton({
             id: "refresh_key",
             label: "Refresh API key",
-            value: undefined as any,
-            action: async () => {
+            onTap: async () => {
                 await this.refreshAPIKey();
             },
         });
         const resetSessionBtn: DUIButton = App.createDUIButton({
             id: "reset_session",
             label: "Reset session (full bypass)",
-            value: undefined as any,
-            action: async () => {
+            onTap: async () => {
                 // Drop every MangaHub cookie including cf_clearance, then
                 // clear the stored mhub_access so the next bypass re-issues
                 // a fresh token. Paperback will re-trigger the CF webview

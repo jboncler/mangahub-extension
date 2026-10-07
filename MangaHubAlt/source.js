@@ -448,7 +448,7 @@ var _Sources = (() => {
       "use strict";
       Object.defineProperty(exports, "__esModule", { value: true });
       exports.urlEncodeObject = exports.convertTime = exports.Source = void 0;
-      var Source = class {
+      var Source2 = class {
         constructor(cheerio) {
           this.cheerio = cheerio;
         }
@@ -465,7 +465,7 @@ var _Sources = (() => {
           return this.getSearchTags?.();
         }
       };
-      exports.Source = Source;
+      exports.Source = Source2;
       function convertTime(timeAgo) {
         let time;
         let trimmed = Number((/\d*/.exec(timeAgo) ?? [])[0]);
@@ -1559,7 +1559,7 @@ var _Sources = (() => {
   var MH_API_DOMAIN = "https://api.mghcdn.com/graphql";
   var MH_CDN_DOMAIN = "https://imgx.mghcdn.com";
   var MangaHubAltInfo = {
-    version: "3.2.3",
+    version: "3.2.4",
     name: "MangaHub (Alt)",
     icon: "icon.png",
     author: "jakub",
@@ -1575,8 +1575,9 @@ var _Sources = (() => {
     ],
     intents: import_types.SourceIntents.MANGA_CHAPTERS | import_types.SourceIntents.HOMEPAGE_SECTIONS | import_types.SourceIntents.CLOUDFLARE_BYPASS_REQUIRED | import_types.SourceIntents.SETTINGS_UI
   };
-  var MangaHubAlt = class {
+  var MangaHubAlt = class extends import_types.Source {
     constructor() {
+      super(...arguments);
       this.requestManager = App.createRequestManager({
         requestsPerSecond: 2,
         requestTimeout: 15e3,
@@ -2076,22 +2077,19 @@ Try the CloudFlare bypass again or come back later.`);
     async getSourceMenu() {
       const helpLabel = App.createDUILabel({
         id: "limit_help",
-        label: "MangaHub enforces a server-side rate limit (~10 chapters per 20-60 min per session). It cannot be bypassed from the client. If you hit 'API rate limit excessed', wait for the window to reset, or use 'Reset session' below to start a fresh one.",
-        value: void 0
+        label: "MangaHub enforces a server-side rate limit (~10 chapters per 20-60 min per session). It cannot be bypassed from the client. If you hit 'API rate limit excessed', wait for the window to reset, or use 'Reset session' below to start a fresh one."
       });
       const refreshKeyBtn = App.createDUIButton({
         id: "refresh_key",
         label: "Refresh API key",
-        value: void 0,
-        action: async () => {
+        onTap: async () => {
           await this.refreshAPIKey();
         }
       });
       const resetSessionBtn = App.createDUIButton({
         id: "reset_session",
         label: "Reset session (full bypass)",
-        value: void 0,
-        action: async () => {
+        onTap: async () => {
           const cookieStore = this.requestManager?.cookieStore;
           cookieStore?.getAllCookies().filter((c) => c.domain.includes("mangahub.io")).forEach((c) => cookieStore.removeCookie(c));
           await this.stateManager.store("mhub_key", "");
